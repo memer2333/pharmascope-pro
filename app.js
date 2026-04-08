@@ -26,11 +26,13 @@ const DOM = {
 };
 
 // ── Initialize App ───────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  renderHomePage();
-  bindSearchEvents();
-  updateAPIStatus('live');
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    renderHomePage();
+    bindSearchEvents();
+    updateAPIStatus('live');
+  });
+}
 
 // ── Search Binding ───────────────────────────────────────────
 function bindSearchEvents() {
