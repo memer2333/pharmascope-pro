@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Local env & IDE
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+
+# Caches
+.npm/
+.eslintcache
+
+# Development/Data parsing (If you don't want to upload raw data)
+# data/source/
+# scripts/parse_drugbank.js

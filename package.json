@@ -1,0 +1,12 @@
+{
+  "name": "pharmascope-pro",
+  "version": "1.0.0",
+  "description": "Clinical Drug Reference Webapp",
+  "main": "app.js",
+  "scripts": {
+    "parse": "node scripts/parse_drugbank.js"
+  },
+  "dependencies": {
+    "sax": "^1.4.1"
+  }
+}

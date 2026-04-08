@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="PharmaScope Pro — Clinical-grade drug information for healthcare professionals. Indications, dosing, ADME, safety, contraindications, drug interactions, and adverse events powered by FDA & NIH APIs." />
+  <meta name="theme-color" content="#060b18" />
+  <meta property="og:title" content="PharmaScope Pro — Clinical Drug Reference" />
+  <meta property="og:description" content="Evidence-based drug information for healthcare professionals. Real-time FDA & NIH data." />
+  <title>PharmaScope Pro — Clinical Drug Reference</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💊</text></svg>" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       HEADER / NAVBAR
+  ══════════════════════════════════════════════ -->
+  <header class="app-header" id="app-header">
+    <a class="logo" onclick="renderHomePage()" href="#" id="logo-link" aria-label="PharmaScope Pro Home">
+      <div class="logo-icon">💊</div>
+      <span class="logo-text">Pharma<span>Scope</span></span>
+      <span class="logo-badge">Pro</span>
+    </a>
+
+    <nav class="header-nav" role="navigation" aria-label="Header navigation">
+      <div class="header-search-mini" onclick="renderHomePage(); setTimeout(()=>document.getElementById('main-search-input')?.focus(),100)" role="button" tabindex="0" aria-label="Open search">
+        🔍 Quick Search
+      </div>
+      <div class="api-status" aria-live="polite">
+        <div class="status-dot" id="api-status-dot"></div>
+        <span id="api-status-label">Connecting…</span>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ═══════════════════════════════════════════
+       MAIN CONTENT (Dynamic SPA)
+  ══════════════════════════════════════════════ -->
+  <main id="main-content" role="main" aria-label="Main content">
+    <!-- Rendered by app.js -->
+  </main>
+
+  <!-- ═══════════════════════════════════════════
+       TOAST CONTAINER
+  ══════════════════════════════════════════════ -->
+  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- ═══════════════════════════════════════════
+       SCRIPTS — Load order matters
+  ══════════════════════════════════════════════ -->
+
+  <!-- 1. Curated local drug dataset -->
+  <script src="utils/drugData.js"></script>
+
+  <!-- 2. Clinical calculators -->
+  <script src="utils/calculators.js"></script>
+
+  <!-- 3. Text parsers -->
+  <script src="utils/parsers.js"></script>
+
+  <!-- 4. API services -->
+  <script src="api/openFDA.js"></script>
+  <script src="api/rxnav.js"></script>
+  <script src="api/dailymed.js"></script>
+
+  <!-- 5. UI components -->
+  <script src="components/drugCard.js"></script>
+  <script src="components/drugProfile.js"></script>
+  <script src="components/chatbot.js"></script>
+
+  <!-- 6. Main app controller (must be last) -->
+  <script src="app.js"></script>
+
+</body>
+</html>
