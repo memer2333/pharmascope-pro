@@ -1,6 +1,6 @@
 /**
  * PharmaScope Pro — Text Parsers
- * Converts raw FDA/API text into structured, readable HTML
+ * Converts raw DrugBank JSON + DailyMed label into structured, readable HTML
  */
 
 /**
@@ -8,14 +8,11 @@
  */
 function formatTextToList(rawText, maxItems = 20) {
   if (!rawText) return '<p class="no-data">No data available.</p>';
-  // Decode HTML entities from FDA
   let text = rawText
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
     .replace(/&nbsp;/g, ' ').replace(/&#160;/g, ' ');
-  // Strip HTML tags but preserve structure hints
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<p[^>]*>/gi, '\n').replace(/<\/p>/gi, '\n')
     .replace(/<li[^>]*>/gi, '\n• ').replace(/<\/li>/gi, '').replace(/<[^>]+>/g, '');
-  // Split on sentence boundaries, bullet chars, or numbers
   const sentences = text.split(/\n|(?<=[.!?])\s+(?=[A-Z])|(?=[•\-\*]\s)|\d+\.\s+/)
     .map(s => s.replace(/^[•\-\*]+\s*/, '').trim())
     .filter(s => s.length > 15);
@@ -32,15 +29,11 @@ function formatTextToList(rawText, maxItems = 20) {
  */
 function highlightKeyTerms(text) {
   const terms = [
-    // Warnings
     ['fatal', 'warn'], ['death', 'warn'], ['serious', 'warn'], ['severe', 'warn'],
     ['contraindicated', 'warn'], ['avoid', 'warn'], ['caution', 'warn'],
-    // Important clinical
     ['monitor', 'info'], ['adjust dose', 'info'], ['dose reduction', 'info'],
     ['renal impairment', 'info'], ['hepatic impairment', 'info'],
-    // Positive/neutral
     ['recommended', 'good'], ['preferred', 'good'], ['effective', 'good'],
-    // Drug interactions
     ['CYP', 'cyp'], ['P450', 'cyp'], ['inhibitor', 'cyp'], ['inducer', 'cyp'],
   ];
   let out = text;
@@ -62,7 +55,7 @@ function parseAdverseEvents(data) {
     .map(item => ({
       term: toTitleCase(item.term),
       count: item.count,
-      percent: null // filled in after total computed
+      percent: null
     }))
     .map((item, _, arr) => {
       const total = arr.reduce((s, e) => s + e.count, 0);
@@ -72,35 +65,90 @@ function parseAdverseEvents(data) {
 }
 
 /**
- * Parse DrugBank JSON result into structured drug profile
+ * Parse DrugBank JSON result + DailyMed label into a unified structured drug profile.
+ * Priority: localData (curated) > dailyMedLabel (live FDA) > DrugBank JSON
+ *
+ * @param {object} result       - DrugBank JSON object (from /data/drugs/*.json)
+ * @param {object} dailyMedLabel - Structured label from getFullDrugLabel() in dailymed.js
  */
-function parseFDALabel(result) {
+function parseFDALabel(result, dailyMedLabel) {
   if (!result) return null;
+
+  const dm = dailyMedLabel || {};
+
+  // Helper: pick first truthy value across sources
+  const pick = (...vals) => vals.find(v => v && String(v).trim().length > 0) || null;
+
+  // Build a combined pharmacokinetics block from DailyMed sub-sections
+  const pkParts = [
+    dm.pharmacokinetics,
+    dm.absorption  ? `Absorption: ${dm.absorption}`    : null,
+    dm.distribution ? `Distribution: ${dm.distribution}` : null,
+    dm.metabolism   ? `Metabolism: ${dm.metabolism}`     : null,
+    dm.excretion    ? `Excretion: ${dm.excretion}`       : null,
+  ].filter(Boolean);
+  const combinedPK = pkParts.length > 0 ? pkParts.join('\n\n') : null;
+
   return {
-    brandName: result.name || 'Unknown',
-    genericName: (result.brandNames && result.brandNames.length > 0) ? result.brandNames[0] : result.name,
-    manufacturer: 'DrugBank Database',
-    route: '',
-    dosageForm: '',
-    rxcui: null,
-    // Clinical sections
-    indications: result.indication,
-    dosage: '', // Available in localData if needed
-    warnings: '',
-    boxedWarning: '',
-    contraindications: '',
-    adverseReactions: '',
-    drugInteractions: '',
-    clinicalPharmacology: result.pharmacodynamics,
-    mechanismOfAction: result.mechanismOfAction,
-    pharmacokinetics: '',
-    useInPregnancy: '',
-    useInLactation: '',
-    pediatricUse: '',
-    geriatricUse: '',
-    storage: '',
-    overdosage: result.toxicity,
-    pharmClass: result.groups || []
+    // Identity
+    brandName:    result.name || 'Unknown',
+    genericName:  (result.brandNames && result.brandNames.length > 0)
+                    ? result.brandNames[0] : result.name,
+    manufacturer: dm._source === 'DailyMed' ? `${dm._labelTitle || 'DailyMed'}` : 'DrugBank Database',
+    route:        '',
+    dosageForm:   '',
+    rxcui:        null,
+
+    // ── Clinical sections ──────────────────────────────────────────────────────
+    // Indications: DailyMed > DrugBank
+    indications:          pick(dm.indications, result.indication),
+
+    // Dosage: DailyMed is authoritative — this is the key fix for missing dosing
+    dosage:               pick(dm.dosage),
+
+    // Warnings: DailyMed
+    warnings:             pick(dm.warnings),
+    boxedWarning:         pick(dm.boxedWarning),
+
+    // Contraindications: DailyMed
+    contraindications:    pick(dm.contraindications),
+
+    // Adverse reactions: DailyMed
+    adverseReactions:     pick(dm.adverseReactions),
+
+    // Drug interactions: DailyMed
+    drugInteractions:     pick(dm.drugInteractions),
+
+    // Pharmacology: DailyMed MoA > DrugBank MoA
+    mechanismOfAction:    pick(dm.mechanismOfAction, result.mechanismOfAction),
+    clinicalPharmacology: pick(result.pharmacodynamics, dm.clinicalPharmacology),
+
+    // Full PK block built from DailyMed sub-sections
+    pharmacokinetics:     combinedPK,
+
+    // Individual ADME fields (used by PK stat cards)
+    absorption:           pick(dm.absorption),
+    distribution:         pick(dm.distribution),
+    metabolism:           pick(dm.metabolism),
+    excretion:            pick(dm.excretion),
+
+    // Special populations: DailyMed
+    useInPregnancy:       pick(dm.useInPregnancy),
+    useInLactation:       pick(dm.useInLactation),
+    pediatricUse:         pick(dm.pediatricUse),
+    geriatricUse:         pick(dm.geriatricUse),
+
+    // Overdosage: DailyMed > DrugBank toxicity
+    overdosage:           pick(dm.overdosage, result.toxicity),
+
+    // Storage
+    storage:              pick(dm.storage),
+
+    // Drug class / groups
+    pharmClass:           result.groups || [],
+
+    // Flag so UI can show data source badge
+    _dailyMedLoaded:      !!dm._source,
   };
 }
 
