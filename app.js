@@ -432,8 +432,8 @@ function buildHomePage() {
           <div class="search-container" style="position:relative;">
             <input
               type="text"
-              id="home-search-input"
-              class="home-search-input"
+              id="search-input"
+              class="search-input"
               placeholder="Search by drug name, brand, or class…"
               oninput="loadSuggestions(this.value)"
               onkeydown="if(event.key==='Enter') performSearch(this.value)"
@@ -441,8 +441,8 @@ function buildHomePage() {
             />
             <div id="suggestions-box" class="suggestions-dropdown"></div>
           </div>
-          <button class="btn-primary home-search-btn"
-            onclick="performSearch(document.getElementById('home-search-input').value)">
+          <button class="btn-primary home-search-btn id="search-btn""
+            onclick="performSearch(document.getElementById('search-input').value)">
             Search
           </button>
         </div>
