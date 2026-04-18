@@ -418,7 +418,56 @@ function escapeHtml(str) {
 function escapeAttr(str) {
   return escapeHtml(str).replace(/'/g, '&#39;');
 }
+// ── Home Page Builder ─────────────────────────────────────────
+function buildHomePage() {
+  let featured = '';
+  try { featured = renderFeaturedDrugs(selectDrug); } catch(e) {}
+  return `
+    <div class="home-hero">
+      <div class="home-hero-content">
+        <div class="home-badge">🧬 Clinical Drug Reference</div>
+        <h2 class="home-title">PharmaScope <span class="home-title-accent">Pro</span></h2>
+        <p class="home-subtitle">Search 10,000+ drugs for dosing, interactions, pharmacokinetics & safety data.</p>
+        <div class="home-search-wrap">
+          <div class="search-container" style="position:relative;">
+            <input
+              type="text"
+              id="home-search-input"
+              class="home-search-input"
+              placeholder="Search by drug name, brand, or class…"
+              oninput="loadSuggestions(this.value)"
+              onkeydown="if(event.key==='Enter') performSearch(this.value)"
+              autocomplete="off"
+            />
+            <div id="suggestions-box" class="suggestions-dropdown"></div>
+          </div>
+          <button class="btn-primary home-search-btn"
+            onclick="performSearch(document.getElementById('home-search-input').value)">
+            Search
+          </button>
+        </div>
+        <div class="home-quick-tags">
+          <span class="quick-tag" onclick="performSearch('amoxicillin')">Amoxicillin</span>
+          <span class="quick-tag" onclick="performSearch('metformin')">Metformin</span>
+          <span class="quick-tag" onclick="performSearch('atorvastatin')">Atorvastatin</span>
+          <span class="quick-tag" onclick="performSearch('lisinopril')">Lisinopril</span>
+          <span class="quick-tag" onclick="performSearch('warfarin')">Warfarin</span>
+        </div>
+      </div>
+    </div>
+    ${featured ? `<div class="featured-section"><h3 class="section-heading">Featured Drugs</h3>${featured}</div>` : ''}`;
+}
 
+window.addInteractionField = function() {
+  const container = document.getElementById('interaction-inputs');
+  if (!container) return;
+  const count = container.querySelectorAll('input').length + 1;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'interaction-input multi-drug-target';
+  inp.placeholder = `Drug ${count}`;
+  container.appendChild(inp);
+};
 function renderHomePage() {
   AppState.currentView = 'home';
   AppState.currentDrug = null;
