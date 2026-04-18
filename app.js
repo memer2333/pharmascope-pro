@@ -1,4 +1,5 @@
 /**
+ * Updated: Timeout handling for API calls
  * PharmaScope Pro — Main Application Controller
  */
 
