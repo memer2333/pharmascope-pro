@@ -1,219 +1,120 @@
 /**
  * PharmaScope Pro — Main Application Controller
- * Orchestrates search, data fetching, rendering, and calculators
  */
 
-// ── App State ────────────────────────────────────────────────
+// ── App State ─────────────────────────────────────────────────
 const AppState = {
-  currentView: 'home',       // 'home' | 'results' | 'profile'
-  searchQuery: '',
+  currentView: 'home',
   searchResults: [],
+  searchQuery: '',
   currentDrug: null,
   currentFDALabel: null,
   currentLocalData: null,
+  currentDailyMedLabel: null,
   currentRxCUI: null,
-  suggestTimeout: null,
-  isLoading: false
 };
 
-// ── DOM References ───────────────────────────────────────────
+// ── DOM References ────────────────────────────────────────────
 const DOM = {
-  get searchInput() { return document.getElementById('main-search-input'); },
-  get searchBtn() { return document.getElementById('main-search-btn'); },
-  get suggestionsBox() { return document.getElementById('suggestions'); },
   get mainContent() { return document.getElementById('main-content'); },
-  get toastContainer() { return document.getElementById('toast-container'); }
+  get searchInput()  { return document.getElementById('search-input'); },
+  get searchBtn()    { return document.getElementById('search-btn'); },
 };
 
-// ── Initialize App ───────────────────────────────────────────
-if (typeof window !== 'undefined') {
-  window.addEventListener('DOMContentLoaded', () => {
-    renderHomePage();
-    bindSearchEvents();
-    updateAPIStatus('live');
-  });
-}
+// ── Initialisation ────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  renderHomePage();
 
-// ── Search Binding ───────────────────────────────────────────
-function bindSearchEvents() {
-  const input = DOM.searchInput;
+  const inp = DOM.searchInput;
+  if (inp) {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') performSearch(inp.value); });
+    inp.addEventListener('input',   e => loadSuggestions(e.target.value));
+    inp.addEventListener('blur',    ()  => setTimeout(hideSuggestions, 150));
+    inp.addEventListener('focus',   e => { if (e.target.value.length >= 2) loadSuggestions(e.target.value); });
+  }
   const btn = DOM.searchBtn;
-  if (!input || !btn) return;
+  if (btn) btn.addEventListener('click', () => performSearch(DOM.searchInput?.value || ''));
+});
 
-  // Submit on Enter
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') performSearch(input.value);
-    if (e.key === 'Escape') hideSuggestions();
-  });
-
-  // Auto-suggest on typing
-  input.addEventListener('input', () => {
-    clearTimeout(AppState.suggestTimeout);
-    const q = input.value.trim();
-    if (q.length < 2) { hideSuggestions(); return; }
-    AppState.suggestTimeout = setTimeout(() => loadSuggestions(q), 280);
-  });
-
-  // Hide suggestions on outside click
-  document.addEventListener('click', e => {
-    if (!e.target.closest('.search-wrapper')) hideSuggestions();
-  });
-
-  btn.addEventListener('click', () => performSearch(DOM.searchInput?.value));
-}
-
-// ── Home Page ────────────────────────────────────────────────
-function renderHomePage() {
-  AppState.currentView = 'home';
-  DOM.mainContent.innerHTML = `
-    <section class="hero">
-      <div class="hero-eyebrow">🏥 Clinical Reference Tool</div>
-      <h1>
-        The <span class="gradient-text">Clinical Drug</span><br>Reference You Trust
-      </h1>
-      <p class="hero-subtitle">
-        Evidence-based drug information for healthcare professionals and students.
-        Powered by FDA, NIH DailyMed, and RxNav — all free, all real-time.
-      </p>
-
-      <div class="search-wrapper">
-        <div class="search-bar">
-          <span class="search-icon">🔍</span>
-          <input 
-            type="text" 
-            class="search-input" 
-            id="main-search-input"
-            placeholder="Search by drug name (e.g., Amoxicillin, Metformin)..."
-            autocomplete="off"
-            spellcheck="false"
-            aria-label="Drug search"
-          />
-          <button class="search-btn" id="main-search-btn">
-            Search
-          </button>
-        </div>
-        <div class="suggestions-dropdown" id="suggestions" style="display:none"></div>
-      </div>
-
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <div class="stat-number">100K+</div>
-          <div class="stat-label">Drug Labels</div>
-        </div>
-        <div class="hero-stat">
-          <div class="stat-number">7+M</div>
-          <div class="stat-label">Adverse Event Reports</div>
-        </div>
-        <div class="hero-stat">
-          <div class="stat-number">50+</div>
-          <div class="stat-label">Curated Drug Profiles</div>
-        </div>
-        <div class="hero-stat">
-          <div class="stat-number">5</div>
-          <div class="stat-label">Clinical Modules</div>
-        </div>
-      </div>
-
-      <div class="feature-pills">
-        <span class="feature-pill">📋 Indications & MoA</span>
-        <span class="feature-pill">⚖️ Dosing (Adult/Ped/Renal)</span>
-        <span class="feature-pill">🛡 Safety & BBW</span>
-        <span class="feature-pill">🔬 ADME / CYP450</span>
-        <span class="feature-pill">⚡ Drug Interactions</span>
-        <span class="feature-pill">📊 Adverse Events</span>
-        <span class="feature-pill">🧮 CrCl Calculator</span>
-        <span class="feature-pill">👶 Pediatric mg/kg</span>
-      </div>
-    </section>
-
-    <section class="featured-section">
-      ${renderFeaturedDrugs()}
-    </section>
-  `;
-
-  bindSearchEvents();
-}
-
-// ── Search Flow ──────────────────────────────────────────────
+// ── Search ────────────────────────────────────────────────────
 async function performSearch(query) {
   if (!query || query.trim().length < 2) {
-    showToast('Please enter a drug name to search.', 'info');
+    showToast('Please enter at least 2 characters.', 'info');
     return;
   }
-  query = query.trim();
-  AppState.searchQuery = query;
   hideSuggestions();
-
-  showResultsLoading(query);
-
-  try {
-    const results = await searchDrugs(query);
-    AppState.searchResults = results;
-    renderResultsPage(results, query);
-  } catch (err) {
-    console.error(err);
-    showToast('Search failed. Check your network connection.', 'error');
-    renderResultsPage([], query);
-  }
-}
-
-function showResultsLoading(query) {
+  AppState.searchQuery = query.trim();
   AppState.currentView = 'results';
+
   DOM.mainContent.innerHTML = `
-    <div class="results-section">
-      <div class="results-header">
-        <span class="results-count">Searching for <strong>"${escapeHtml(query)}"</strong>…</span>
-        <button class="btn-back" onclick="renderHomePage()">← Back</button>
-      </div>
-      <div class="loading-state">
-        <div class="loader-ring"></div>
-        <div class="loading-steps">
-          <div class="loading-step active">Querying openFDA drug label database…</div>
-        </div>
-      </div>
+    <div class="loading-state">
+      <div class="loader-ring"></div>
+      <div class="loader-text">Searching for <strong>${escapeHtml(query)}</strong>…</div>
     </div>`;
+
+  const results = await searchDrugs(query).catch(() => []);
+
+  if (!results || results.length === 0) {
+    DOM.mainContent.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <h3>No results found for “${escapeHtml(query)}”</h3>
+        <p>Try a generic name, brand name, or drug class.</p>
+        <button class="btn-primary" onclick="renderHomePage()">Back to Home</button>
+      </div>`;
+    return;
+  }
+
+  AppState.searchResults = results;
+  window._drugRegistry = results;
+  renderResultsPage(results, query);
 }
 
 function renderResultsPage(results, query) {
   AppState.currentView = 'results';
   DOM.mainContent.innerHTML = `
-    <div class="results-section">
-      <div class="results-header">
-        <span class="results-count">
-          Found <strong>${results.length}</strong> result${results.length !== 1 ? 's' : ''} for <strong>"${escapeHtml(query)}"</strong>
-        </span>
-        <button class="btn-back" onclick="renderHomePage()">← New Search</button>
-      </div>
+    <div class="results-header">
+      <span class="results-count"><strong>${results.length}</strong> result${results.length !== 1 ? 's' : ''} for “${escapeHtml(query)}”</span>
+      <button class="btn-back" onclick="renderHomePage()">🏠 Home</button>
+    </div>
+    <div class="drug-grid">
       ${renderDrugCards(results, selectDrug)}
     </div>`;
 }
 
-// ── Drug Selection & Profile Load ───────────────────────────
+// ── Drug Profile ──────────────────────────────────────────────
 async function selectDrug(dbResult) {
   if (!dbResult) return;
   const drugName = dbResult.name || 'Unknown';
-  const brandName = (dbResult.brandNames && dbResult.brandNames.length > 0) ? dbResult.brandNames[0] : drugName;
-  
+  const brandName = (dbResult.brandNames && dbResult.brandNames.length > 0)
+    ? dbResult.brandNames[0] : drugName;
+
   showProfileLoading(brandName);
 
-  // Parallel data fetching
-  const [adverseEvents, rxcui] = await Promise.all([
+  // Fetch DrugBank local data, adverse events, RxCUI, and DailyMed label in parallel
+  const [adverseEvents, rxcui, dailyMedLabel] = await Promise.all([
     getAdverseEvents(drugName).catch(() => null),
-    getRxCUI(drugName).catch(() => null)
+    getRxCUI(drugName).catch(() => null),
+    getFullDrugLabel(drugName).catch(() => null),
   ]);
 
   AppState.currentRxCUI = rxcui;
+
+  // RxNorm interaction data (depends on rxcui, so sequential)
   let interactions = [];
   if (rxcui) {
     const interData = await getInteractionsByRxCUI(rxcui).catch(() => null);
     if (interData) interactions = parseInteractionData(interData);
   }
 
+  // Curated local data (drugData.js hardcoded set — highest priority for dosing tables)
   const localData = getDrugLocalData(drugName) || getDrugLocalData(brandName);
-  AppState.currentFDALabel = dbResult;
-  AppState.currentLocalData = localData;
 
-  renderProfilePage(dbResult, localData, adverseEvents, interactions, brandName);
+  AppState.currentFDALabel    = dbResult;
+  AppState.currentLocalData   = localData;
+  AppState.currentDailyMedLabel = dailyMedLabel;
+
+  renderProfilePage(dbResult, localData, dailyMedLabel, adverseEvents, interactions, brandName);
 }
 
 function handleCardClick(index) {
@@ -235,36 +136,36 @@ function showProfileLoading(drugName) {
         <div class="loader-ring"></div>
         <div class="loader-text">Loading <strong>${escapeHtml(drugName)}</strong> profile…</div>
         <div class="loading-steps">
-          <div class="loading-step done">FDA label data loaded</div>
-          <div class="loading-step active">Fetching adverse event reports…</div>
-          <div class="loading-step" style="animation-delay:0.5s">Checking RxNav interactions…</div>
-          <div class="loading-step" style="animation-delay:1s">Compiling clinical profile…</div>
+          <div class="loading-step done">DrugBank data loaded</div>
+          <div class="loading-step active">Fetching DailyMed prescribing info…</div>
+          <div class="loading-step" style="animation-delay:0.5s">Fetching adverse event reports…</div>
+          <div class="loading-step" style="animation-delay:1s">Checking RxNav interactions…</div>
+          <div class="loading-step" style="animation-delay:1.5s">Compiling clinical profile…</div>
         </div>
       </div>
     </div>`;
 }
 
-function renderProfilePage(fdaLabel, localData, adverseEvents, interactions, drugName) {
-  const profileHTML = renderDrugProfile(fdaLabel, localData, adverseEvents?.results ? adverseEvents : null, interactions);
+function renderProfilePage(fdaLabel, localData, dailyMedLabel, adverseEvents, interactions, drugName) {
+  const profileHTML = renderDrugProfile(fdaLabel, localData, dailyMedLabel, adverseEvents?.results ? adverseEvents : null, interactions);
   DOM.mainContent.innerHTML = `
     <div class="profile-section">
       <div class="results-header" style="margin-bottom: 1.2rem">
         <span class="results-count">Drug Profile: <strong>${escapeHtml(drugName)}</strong></span>
         <div style="display:flex;gap:.6rem">
-          ${AppState.searchResults.length > 0 
-            ? `<button class="btn-back" onclick="renderResultsPage(AppState.searchResults, AppState.searchQuery)">← Results</button>` 
+          ${AppState.searchResults.length > 0
+            ? `<button class="btn-back" onclick="renderResultsPage(AppState.searchResults, AppState.searchQuery)">← Results</button>`
             : ''}
           <button class="btn-back" onclick="renderHomePage()">🏠 Home</button>
         </div>
       </div>
       ${profileHTML}
     </div>`;
-  
-  // Scroll to top of profile
+
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// ── Tab Switching ────────────────────────────────────────────
+// ── Tab Switching ─────────────────────────────────────────────
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
@@ -274,7 +175,7 @@ function switchTab(tabName) {
   });
 }
 
-// ── Autocomplete ─────────────────────────────────────────────
+// ── Autocomplete ──────────────────────────────────────────────
 async function loadSuggestions(query) {
   const suggestions = await getSuggestions(query).catch(() => []);
   const box = document.getElementById('suggestions');
@@ -328,51 +229,47 @@ async function checkInteractions() {
   }
 
   try {
-    const result = await checkLocalInteractions(drugNames);
-    const { missing: missingDrugs, interactions } = result;
+    const rxcuiList = await Promise.all(
+      drugNames.map(name => getRxCUI(name).catch(() => null))
+    );
+    const validRxCUIs = rxcuiList.filter(Boolean);
 
-    let htmlContext = '';
-    if (missingDrugs.length > 0) {
-      htmlContext += `<div class="result-card warning" style="margin-bottom:0.8rem"><p class="result-note">⚠️ Note: Could not identify the following drugs: <strong>${missingDrugs.join(', ')}</strong>. They were excluded from the check.</p></div>`;
+    if (validRxCUIs.length < 2) {
+      if (resultsEl) resultsEl.innerHTML = `<p class="no-data">Could not find RxCUI identifiers for one or more drugs. Try exact generic names.</p>`;
+      return;
     }
+
+    const interData = await getInteractionsBetween(validRxCUIs).catch(() => null);
+    const interactions = interData ? parseInteractionData(interData) : [];
 
     if (!interactions || interactions.length === 0) {
-      htmlContext += `
-        <div class="result-card success" style="margin-top:0.8rem">
-          <div style="font-size:1.6rem;margin-bottom:0.4rem">✅</div>
-          <div class="result-label">No significant interactions found</div>
-          <p class="result-note">No clinically significant drug-drug interactions found in the local DrugBank database between the identified drugs. Always verify with a comprehensive clinical database.</p>
-        </div>`;
-    } else {
-      htmlContext += `
-        <div style="margin-top:0.8rem">
-          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.8rem">Found ${interactions.length} interaction(s) between the selected drugs:</p>
-          ${interactions.map(i => `
-            <div class="interaction-item" style="border-left-color: ${i.severityColor}">
-              <div class="interaction-header">
-                <span class="interaction-drugs">${escapeHtml(i.drug1)} ↔ ${escapeHtml(i.drug2)}</span>
-                <span class="severity-badge" style="background:${i.severityColor}20;color:${i.severityColor};border:1px solid ${i.severityColor}40">${escapeHtml(i.severity)}</span>
-              </div>
-              <p class="interaction-desc">${escapeHtml(i.description)}</p>
-              <p style="font-size:0.72rem;color:var(--text-muted);margin-top:0.4rem">Source: ${escapeHtml(i.source || 'NIH RxNav')}</p>
-            </div>`).join('')}
-        </div>`;
+      if (resultsEl) resultsEl.innerHTML = `<div class="result-card success"><p>✅ No significant interactions found between these drugs in the RxNorm database.</p><p style="font-size:0.75rem;color:var(--text-muted);margin-top:0.4rem">Always verify with a clinical pharmacist for complete interaction screening.</p></div>`;
+      return;
     }
-    
-    resultsEl.innerHTML = htmlContext;
+
+    if (resultsEl) {
+      resultsEl.innerHTML = interactions.map(inter => `
+        <div class="interaction-result-card" style="border-left:3px solid ${inter.severityColor}">
+          <div class="interaction-header">
+            <span class="interaction-drugs">${escapeHtml(inter.drug1)} ↔ ${escapeHtml(inter.drug2)}</span>
+            <span class="severity-badge" style="background:${inter.severityColor}20;color:${inter.severityColor};border:1px solid ${inter.severityColor}40">${escapeHtml(inter.severity)}</span>
+          </div>
+          <p class="interaction-desc">${highlightKeyTerms(escapeHtml(inter.description))}</p>
+        </div>`).join('');
+    }
   } catch (err) {
-    console.error(err);
-    if (resultsEl) resultsEl.innerHTML = `<div class="error-state">Failed to check interactions. Check your network and try again.</div>`;
+    console.error('Interaction check error:', err);
+    if (resultsEl) resultsEl.innerHTML = `<p class="no-data">Interaction check failed. Please try again.</p>`;
   }
 }
 
-// ── CrCl Calculator ──────────────────────────────────────────
-function runCrClCalculator(drugName) {
-  const age = document.getElementById('crcl-age')?.value;
-  const weight = document.getElementById('crcl-weight')?.value;
-  const scr = document.getElementById('crcl-scr')?.value;
-  const sex = document.getElementById('crcl-sex')?.value;
-  const resultEl = document.getElementById('crcl-result');
+// ── Renal Calculator ──────────────────────────────────────────
+function runRenalCalc() {
+  const age    = parseFloat(document.getElementById('renal-age')?.value);
+  const weight = parseFloat(document.getElementById('renal-weight')?.value);
+  const scr    = parseFloat(document.getElementById('renal-scr')?.value);
+  const sex    = document.getElementById('renal-sex')?.value || 'male';
+  const resultEl = document.getElementById('renal-result');
   if (!resultEl) return;
 
   const result = calculateCrCl({ age, weight, scr, sex });
@@ -381,7 +278,7 @@ function runCrClCalculator(drugName) {
     return;
   }
 
-  // Find renal dosing data for this drug
+  const drugName = AppState.currentDrug?.name || AppState.currentFDALabel?.name || '';
   const localData = AppState.currentLocalData;
   let renalAdjustment = null;
   if (localData?.renalDosing) {
@@ -413,7 +310,6 @@ function findRenalAdjustment(renalDosing, crclValue) {
     const c = String(entry.crcl).toLowerCase().trim();
     if (c === 'any') return entry.adjustment;
     if (c === 'hd' || c === 'esrd') continue;
-    // Parse ranges like ">60", "30-59", "<15", "≥45"
     if (c.startsWith('≥') || c.startsWith('>=')) {
       const threshold = parseFloat(c.replace(/[^0-9.]/g, ''));
       if (crclValue >= threshold) return entry.adjustment;
@@ -428,7 +324,6 @@ function findRenalAdjustment(renalDosing, crclValue) {
       if (parts.length === 2 && crclValue >= parts[0] && crclValue <= parts[1]) return entry.adjustment;
     }
   }
-  // Fallback: if CrCl very low, try 'HD'
   if (crclValue < 10) {
     const hd = renalDosing.find(d => d.crcl.toLowerCase().includes('hd'));
     if (hd) return hd.adjustment;
@@ -438,11 +333,11 @@ function findRenalAdjustment(renalDosing, crclValue) {
 
 // ── Pediatric Calculator ──────────────────────────────────────
 function runPedCalc() {
-  const weightKg = document.getElementById('ped-weight')?.value;
+  const weightKg  = document.getElementById('ped-weight')?.value;
   const dosePerKg = document.getElementById('ped-dose')?.value;
-  const maxDose = document.getElementById('ped-maxdose')?.value;
+  const maxDose   = document.getElementById('ped-maxdose')?.value;
   const frequency = document.getElementById('ped-freq')?.value;
-  const resultEl = document.getElementById('ped-result');
+  const resultEl  = document.getElementById('ped-result');
   if (!resultEl) return;
 
   const res = calculatePediatricDose({ weightKg, dosePerKg, maxDose, frequency });
@@ -451,7 +346,9 @@ function runPedCalc() {
     return;
   }
 
-  const dailyStr = res.dailyDose ? `<div style="margin-top:0.4rem;font-size:0.82rem;color:var(--text-secondary)">Daily dose (${escapeHtml(frequency)}): <strong>${res.dailyDose} mg/day</strong></div>` : '';
+  const dailyStr = res.dailyDose
+    ? `<div style="margin-top:0.4rem;font-size:0.82rem;color:var(--text-secondary)">Daily dose (${escapeHtml(frequency)}): <strong>${res.dailyDose} mg/day</strong></div>`
+    : '';
 
   resultEl.innerHTML = `
     <div class="result-card success">
@@ -466,84 +363,67 @@ function runPedCalc() {
 }
 
 // ── Body Parameter Calculators ────────────────────────────────
-function runBodyCalcs() {
-  const weightKg = parseFloat(document.getElementById('body-weight')?.value);
-  const heightCm = parseFloat(document.getElementById('body-height')?.value);
-  const sex = document.getElementById('body-sex')?.value;
-  const resultEl = document.getElementById('body-result');
+function runBMICalc() {
+  const weight = parseFloat(document.getElementById('bmi-weight')?.value);
+  const height = parseFloat(document.getElementById('bmi-height')?.value);
+  const resultEl = document.getElementById('bmi-result');
   if (!resultEl) return;
-
-  if (!weightKg || !heightCm) {
-    resultEl.innerHTML = `<div class="result-card warning"><p>Please enter valid weight and height.</p></div>`;
-    return;
-  }
-
-  const ibw = calculateIBW({ heightCm, sex });
-  const adjbw = weightKg > ibw * 1.2 ? calculateAdjBW({ ibw, actualWeight: weightKg }) : null;
-  const bsa = calculateBSA({ heightCm, weightKg });
-  const bmi = calculateBMI({ weightKg, heightCm });
-
+  const res = calculateBMI({ weight, height });
+  if (res.error) { resultEl.innerHTML = `<div class="result-card warning"><p>${res.error}</p></div>`; return; }
+  const cardClass = res.bmi < 18.5 ? 'warning' : res.bmi < 25 ? 'success' : res.bmi < 30 ? 'warning' : 'danger';
   resultEl.innerHTML = `
-    <div class="result-card" style="margin-top:0.6rem">
-      <div class="body-results-grid">
-        <div class="body-result-item">
-          <div class="body-result-value">${ibw} kg</div>
-          <div class="body-result-label">Ideal Body Wt (IBW)</div>
-          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.15rem">Devine Formula</div>
-        </div>
-        ${adjbw ? `
-        <div class="body-result-item">
-          <div class="body-result-value">${adjbw} kg</div>
-          <div class="body-result-label">Adjusted BW (AdjBW)</div>
-          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.15rem">IBW + 40% excess</div>
-        </div>` : ''}
-        <div class="body-result-item">
-          <div class="body-result-value">${bsa} m²</div>
-          <div class="body-result-label">Body Surface Area</div>
-          <div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.15rem">Mosteller Formula</div>
-        </div>
-        <div class="body-result-item">
-          <div class="body-result-value">${bmi.value}</div>
-          <div class="body-result-label">BMI (kg/m²)</div>
-          <div class="bmi-cat" style="color:${bmi.category.color}">${bmi.category.label}</div>
-        </div>
-      </div>
+    <div class="result-card ${cardClass}">
+      <div class="result-value" style="color:${res.color}">${res.bmi}</div>
+      <div class="result-label">Body Mass Index</div>
+      <span class="result-stage" style="background:${res.color}20;color:${res.color};border:1px solid ${res.color}40;margin-top:0.5rem;display:inline-block">${res.category}</span>
+      <p class="result-note">${res.interpretation}</p>
     </div>`;
 }
 
-// ── API Status ────────────────────────────────────────────────
-function updateAPIStatus(status) {
-  const dot = document.getElementById('api-status-dot');
-  const label = document.getElementById('api-status-label');
-  if (!dot || !label) return;
-  if (status === 'live') {
-    dot.style.background = 'var(--success)';
-    label.textContent = 'APIs Live';
-  } else {
-    dot.style.background = 'var(--danger)';
-    label.textContent = 'Offline';
-  }
+function runIBWCalc() {
+  const height = parseFloat(document.getElementById('ibw-height')?.value);
+  const sex    = document.getElementById('ibw-sex')?.value || 'male';
+  const resultEl = document.getElementById('ibw-result');
+  if (!resultEl) return;
+  const res = calculateIBW({ height, sex });
+  if (res.error) { resultEl.innerHTML = `<div class="result-card warning"><p>${res.error}</p></div>`; return; }
+  resultEl.innerHTML = `
+    <div class="result-card success">
+      <div class="result-value" style="color:#27ae60">${res.ibw} <small style="font-size:0.9rem;font-weight:400">kg</small></div>
+      <div class="result-label">Ideal Body Weight (Devine Formula)</div>
+      <p class="result-note">${escapeHtml(res.note)}</p>
+      <p style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem">Formula: ${sex === 'male' ? '50' : '45.5'} + 2.3 × (height_inches − 60)</p>
+    </div>`;
 }
 
-// ── Toast Notifications ──────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────
 function showToast(message, type = 'info') {
-  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
-  const container = DOM.toastContainer;
-  if (!container) return;
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
   const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${escapeHtml(message)}</span>`;
-  container.appendChild(toast);
-  setTimeout(() => toast.remove(), 3200);
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-// ── Utilities ─────────────────────────────────────────────────
 function escapeHtml(str) {
-  if (!str) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
 function escapeAttr(str) {
-  if (!str) return '';
-  return String(str).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  return escapeHtml(str).replace(/'/g, '&#39;');
+}
+
+function renderHomePage() {
+  AppState.currentView = 'home';
+  AppState.currentDrug = null;
+  AppState.currentFDALabel = null;
+  AppState.currentLocalData = null;
+  AppState.currentDailyMedLabel = null;
+  DOM.mainContent.innerHTML = buildHomePage();
 }
