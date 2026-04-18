@@ -7,30 +7,58 @@
 const DAILYMED_BASE = 'https://dailymed.nlm.nih.gov/dailymed/services/v2';
 
 /**
- * Search DailyMed for a drug SPL (Structured Product Labeling)
+ * Search DailyMed for a drug SPL.
+ * Tries multiple name variants (original, lowercase, uppercase, first word)
+ * to handle generics like meropenem, vancomycin, piperacillin, etc.
  */
 async function searchDailyMed(drugName) {
-  const encoded = encodeURIComponent(drugName.trim());
-  const url = `${DAILYMED_BASE}/spls.json?drug_name=${encoded}&pagesize=5`;
-  try {
-    const res = await fetchWithTimeout(url, 8000);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.data || [];
-  } catch (err) {
-    console.warn('DailyMed search failed:', err);
-    return null;
+  const base = drugName.trim();
+  const variants = [
+    base,
+    base.toLowerCase(),
+    base.toUpperCase(),
+    base.charAt(0).toUpperCase() + base.slice(1).toLowerCase(),
+    base.split(' ')[0],
+  ];
+  for (const name of [...new Set(variants)]) {
+    const encoded = encodeURIComponent(name);
+    const url = `${DAILYMED_BASE}/spls.json?drug_name=${encoded}&pagesize=10`;
+    try {
+      const res = await fetchWithTimeout(url, 10000);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.data && data.data.length > 0) return data.data;
+    } catch (err) {
+      console.warn(`DailyMed search variant failed (${name}):`, err);
+    }
   }
+  return null;
 }
 
 /**
- * Get SPL details by setId
+ * Pick the best matching SPL result.
+ * Priority: exact title match > starts with > contains > first result.
+ */
+function pickBestResult(results, drugName) {
+  if (!results || results.length === 0) return null;
+  const name = drugName.toLowerCase().trim();
+  const exact    = results.find(r => (r.title || '').toLowerCase() === name);
+  if (exact) return exact;
+  const starts   = results.find(r => (r.title || '').toLowerCase().startsWith(name));
+  if (starts) return starts;
+  const contains = results.find(r => (r.title || '').toLowerCase().includes(name));
+  if (contains) return contains;
+  return results[0];
+}
+
+/**
+ * Get SPL details by setId.
  */
 async function getSPLById(setId) {
   if (!setId) return null;
   const url = `${DAILYMED_BASE}/spls/${setId}.json`;
   try {
-    const res = await fetchWithTimeout(url, 8000);
+    const res = await fetchWithTimeout(url, 10000);
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
@@ -48,20 +76,15 @@ async function getFullDrugLabel(drugName) {
   if (!drugName) return null;
   try {
     const results = await searchDailyMed(drugName);
-    if (!results || results.length === 0) return null;
-
-    // Prefer a result whose title closely matches the drug name
-    const nameLower = drugName.toLowerCase();
-    const best = results.find(r =>
-      (r.title || '').toLowerCase().includes(nameLower)
-    ) || results[0];
-
+    if (!results || results.length === 0) {
+      console.warn('DailyMed: no results for', drugName);
+      return null;
+    }
+    const best  = pickBestResult(results, drugName);
     const setId = best.setid;
     if (!setId) return null;
-
     const spl = await getSPLById(setId);
     if (!spl || !spl.data) return null;
-
     return extractAllSections(spl.data, best.title || drugName);
   } catch (err) {
     console.warn('DailyMed getFullDrugLabel failed:', err);
@@ -76,7 +99,6 @@ async function getFullDrugLabel(drugName) {
 function extractAllSections(splData, labelTitle) {
   if (!splData) return null;
   const sections = splData.sections || [];
-
   const label = {
     _source: 'DailyMed',
     _labelTitle: labelTitle,
@@ -104,87 +126,48 @@ function extractAllSections(splData, labelTitle) {
 
   sections.forEach(section => {
     const title = (section.title || '').toLowerCase().trim();
-    const text = (section.text || '').trim();
+    const text  = (section.text  || '').trim();
     if (!text) return;
 
-    // Dosage & Administration
-    if (title.includes('dosage and administration') || title === 'dosage & administration') {
+    if (title.includes('dosage and administration') || title.includes('dosage & administration') || title === 'dosage') {
       label.dosage = label.dosage ? label.dosage + '\n' + text : text;
-    }
-    // Boxed Warning
-    else if (title.includes('boxed warning') || title.includes('black box') || title.includes('warning\nboxed')) {
+    } else if (title.includes('boxed warning') || title.includes('black box') || title.includes('warnings: boxed')) {
       label.boxedWarning = text;
-    }
-    // Warnings & Precautions
-    else if (title.includes('warnings and precautions') || title === 'warnings') {
+    } else if (title.includes('warnings and precautions') || title === 'warnings') {
       label.warnings = label.warnings ? label.warnings + '\n' + text : text;
-    }
-    // Contraindications
-    else if (title.includes('contraindication')) {
+    } else if (title.includes('contraindication')) {
       label.contraindications = text;
-    }
-    // Adverse Reactions
-    else if (title.includes('adverse reaction') || title.includes('adverse effect')) {
+    } else if (title.includes('adverse reaction') || title.includes('adverse effect')) {
       label.adverseReactions = label.adverseReactions ? label.adverseReactions + '\n' + text : text;
-    }
-    // Drug Interactions
-    else if (title.includes('drug interaction')) {
+    } else if (title.includes('drug interaction')) {
       label.drugInteractions = label.drugInteractions ? label.drugInteractions + '\n' + text : text;
-    }
-    // Clinical Pharmacology (parent section — keep as fallback)
-    else if (title === 'clinical pharmacology') {
+    } else if (title === 'clinical pharmacology') {
       label.clinicalPharmacology = text;
-    }
-    // Mechanism of Action
-    else if (title.includes('mechanism of action')) {
+    } else if (title.includes('mechanism of action')) {
       label.mechanismOfAction = text;
-    }
-    // Pharmacokinetics (full section)
-    else if (title === 'pharmacokinetics' || title.includes('pharmacokinetic')) {
+    } else if (title === 'pharmacokinetics' || (title.includes('pharmacokinetic') && !title.includes('clinical'))) {
       label.pharmacokinetics = label.pharmacokinetics ? label.pharmacokinetics + '\n' + text : text;
-    }
-    // Absorption sub-section
-    else if (title === 'absorption') {
+    } else if (title === 'absorption') {
       label.absorption = text;
-    }
-    // Distribution sub-section
-    else if (title === 'distribution') {
+    } else if (title === 'distribution') {
       label.distribution = text;
-    }
-    // Metabolism sub-section
-    else if (title === 'metabolism') {
+    } else if (title === 'metabolism') {
       label.metabolism = text;
-    }
-    // Excretion / Elimination sub-section
-    else if (title === 'excretion' || title === 'elimination') {
+    } else if (title === 'excretion' || title === 'elimination') {
       label.excretion = text;
-    }
-    // Pregnancy
-    else if (title.includes('pregnancy') || title.includes('use in pregnancy')) {
+    } else if (title.includes('pregnancy') || title.includes('use in pregnancy')) {
       label.useInPregnancy = text;
-    }
-    // Lactation / Nursing
-    else if (title.includes('lactation') || title.includes('nursing') || title.includes('breast')) {
+    } else if (title.includes('lactation') || title.includes('nursing') || title.includes('breast')) {
       label.useInLactation = text;
-    }
-    // Pediatric Use
-    else if (title.includes('pediatric')) {
+    } else if (title.includes('pediatric')) {
       label.pediatricUse = label.pediatricUse ? label.pediatricUse + '\n' + text : text;
-    }
-    // Geriatric Use
-    else if (title.includes('geriatric')) {
+    } else if (title.includes('geriatric')) {
       label.geriatricUse = text;
-    }
-    // Overdosage
-    else if (title.includes('overdos')) {
+    } else if (title.includes('overdos')) {
       label.overdosage = text;
-    }
-    // Indications & Usage
-    else if (title.includes('indication') || title.includes('usage')) {
+    } else if (title.includes('indication') || title === 'indications and usage' || title === 'indications & usage') {
       label.indications = label.indications ? label.indications + '\n' + text : text;
-    }
-    // Storage
-    else if (title.includes('storage') || title.includes('how supplied')) {
+    } else if (title.includes('storage') || title.includes('how supplied')) {
       label.storage = text;
     }
   });
@@ -212,22 +195,18 @@ function extractADMEFromSPL(splData) {
   if (!splData) return null;
   const sections = splData.sections || [];
   const adme = {
-    absorption: null,
-    distribution: null,
-    metabolism: null,
-    excretion: null,
-    pharmacokinetics: null,
-    clinicalPharmacology: null
+    absorption: null, distribution: null, metabolism: null,
+    excretion: null, pharmacokinetics: null, clinicalPharmacology: null
   };
   sections.forEach(section => {
     const title = (section.title || '').toLowerCase();
-    const text = section.text || '';
-    if (title.includes('absorption')) adme.absorption = text;
-    else if (title.includes('distribution')) adme.distribution = text;
-    else if (title.includes('metabolism')) adme.metabolism = text;
+    const text  = section.text || '';
+    if      (title.includes('absorption'))                                adme.absorption = text;
+    else if (title.includes('distribution'))                              adme.distribution = text;
+    else if (title.includes('metabolism'))                                adme.metabolism = text;
     else if (title.includes('excretion') || title.includes('elimination')) adme.excretion = text;
-    else if (title.includes('pharmacokinetics') || title.includes('pk')) adme.pharmacokinetics = text;
-    else if (title.includes('clinical pharmacology')) adme.clinicalPharmacology = text;
+    else if (title.includes('pharmacokinetics') || title.includes('pk'))  adme.pharmacokinetics = text;
+    else if (title.includes('clinical pharmacology'))                     adme.clinicalPharmacology = text;
   });
   return adme;
 }
@@ -241,9 +220,7 @@ async function getDrugByNDC(ndc) {
     const res = await fetchWithTimeout(url, 6000);
     if (!res.ok) return null;
     return await res.json();
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 /**
@@ -257,12 +234,10 @@ async function getNDCsForDrug(drugName) {
     if (!res.ok) return [];
     const data = await res.json();
     return data.data || [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-async function fetchWithTimeout(url, ms = 8000) {
+async function fetchWithTimeout(url, ms = 10000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), ms);
   try {
