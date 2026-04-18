@@ -40,7 +40,160 @@ async function getSPLById(setId) {
 }
 
 /**
- * Get drug ADME / pharmacokinetics sections from DailyMed
+ * Get the full drug label from DailyMed including dosing, warnings,
+ * PK, contraindications, pregnancy, pediatric, geriatric sections.
+ * Returns a structured object ready to merge into parsedLabel.
+ */
+async function getFullDrugLabel(drugName) {
+  if (!drugName) return null;
+  try {
+    const results = await searchDailyMed(drugName);
+    if (!results || results.length === 0) return null;
+
+    // Prefer a result whose title closely matches the drug name
+    const nameLower = drugName.toLowerCase();
+    const best = results.find(r =>
+      (r.title || '').toLowerCase().includes(nameLower)
+    ) || results[0];
+
+    const setId = best.setid;
+    if (!setId) return null;
+
+    const spl = await getSPLById(setId);
+    if (!spl || !spl.data) return null;
+
+    return extractAllSections(spl.data, best.title || drugName);
+  } catch (err) {
+    console.warn('DailyMed getFullDrugLabel failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Extract ALL clinical sections from an SPL data object.
+ * Maps section titles to structured fields used by parseFDALabel.
+ */
+function extractAllSections(splData, labelTitle) {
+  if (!splData) return null;
+  const sections = splData.sections || [];
+
+  const label = {
+    _source: 'DailyMed',
+    _labelTitle: labelTitle,
+    dosage: null,
+    warnings: null,
+    boxedWarning: null,
+    contraindications: null,
+    adverseReactions: null,
+    drugInteractions: null,
+    clinicalPharmacology: null,
+    pharmacokinetics: null,
+    absorption: null,
+    distribution: null,
+    metabolism: null,
+    excretion: null,
+    useInPregnancy: null,
+    useInLactation: null,
+    pediatricUse: null,
+    geriatricUse: null,
+    overdosage: null,
+    indications: null,
+    storage: null,
+    mechanismOfAction: null,
+  };
+
+  sections.forEach(section => {
+    const title = (section.title || '').toLowerCase().trim();
+    const text = (section.text || '').trim();
+    if (!text) return;
+
+    // Dosage & Administration
+    if (title.includes('dosage and administration') || title === 'dosage & administration') {
+      label.dosage = label.dosage ? label.dosage + '\n' + text : text;
+    }
+    // Boxed Warning
+    else if (title.includes('boxed warning') || title.includes('black box') || title.includes('warning\nboxed')) {
+      label.boxedWarning = text;
+    }
+    // Warnings & Precautions
+    else if (title.includes('warnings and precautions') || title === 'warnings') {
+      label.warnings = label.warnings ? label.warnings + '\n' + text : text;
+    }
+    // Contraindications
+    else if (title.includes('contraindication')) {
+      label.contraindications = text;
+    }
+    // Adverse Reactions
+    else if (title.includes('adverse reaction') || title.includes('adverse effect')) {
+      label.adverseReactions = label.adverseReactions ? label.adverseReactions + '\n' + text : text;
+    }
+    // Drug Interactions
+    else if (title.includes('drug interaction')) {
+      label.drugInteractions = label.drugInteractions ? label.drugInteractions + '\n' + text : text;
+    }
+    // Clinical Pharmacology (parent section — keep as fallback)
+    else if (title === 'clinical pharmacology') {
+      label.clinicalPharmacology = text;
+    }
+    // Mechanism of Action
+    else if (title.includes('mechanism of action')) {
+      label.mechanismOfAction = text;
+    }
+    // Pharmacokinetics (full section)
+    else if (title === 'pharmacokinetics' || title.includes('pharmacokinetic')) {
+      label.pharmacokinetics = label.pharmacokinetics ? label.pharmacokinetics + '\n' + text : text;
+    }
+    // Absorption sub-section
+    else if (title === 'absorption') {
+      label.absorption = text;
+    }
+    // Distribution sub-section
+    else if (title === 'distribution') {
+      label.distribution = text;
+    }
+    // Metabolism sub-section
+    else if (title === 'metabolism') {
+      label.metabolism = text;
+    }
+    // Excretion / Elimination sub-section
+    else if (title === 'excretion' || title === 'elimination') {
+      label.excretion = text;
+    }
+    // Pregnancy
+    else if (title.includes('pregnancy') || title.includes('use in pregnancy')) {
+      label.useInPregnancy = text;
+    }
+    // Lactation / Nursing
+    else if (title.includes('lactation') || title.includes('nursing') || title.includes('breast')) {
+      label.useInLactation = text;
+    }
+    // Pediatric Use
+    else if (title.includes('pediatric')) {
+      label.pediatricUse = label.pediatricUse ? label.pediatricUse + '\n' + text : text;
+    }
+    // Geriatric Use
+    else if (title.includes('geriatric')) {
+      label.geriatricUse = text;
+    }
+    // Overdosage
+    else if (title.includes('overdos')) {
+      label.overdosage = text;
+    }
+    // Indications & Usage
+    else if (title.includes('indication') || title.includes('usage')) {
+      label.indications = label.indications ? label.indications + '\n' + text : text;
+    }
+    // Storage
+    else if (title.includes('storage') || title.includes('how supplied')) {
+      label.storage = text;
+    }
+  });
+
+  return label;
+}
+
+/**
+ * Get drug ADME / pharmacokinetics sections from DailyMed (legacy helper)
  */
 async function getDrugADME(drugName) {
   const results = await searchDailyMed(drugName);
