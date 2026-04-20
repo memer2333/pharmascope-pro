@@ -1,6 +1,5 @@
 /**
- * Updated: Timeout handling for API calls
- * PharmaScope Pro — Main Application Controller
+ * Fixed: Restored complete file - ready for deployment * PharmaScope Pro — Main Application Controller
  */
 
 // ── App State ─────────────────────────────────────────────────
