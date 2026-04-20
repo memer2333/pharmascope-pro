@@ -96,3 +96,51 @@ async function selectDrug(dbResult) {
     safeApiCall(() => getAdverseEvents(drugName), null, 6000),
         safeApiCall(() => getRxCUI(drugName), null, 6000),
         safeApiCall(() => getFullDrugLabel(drugName), null, 6000),
+450
+
+    // --- Home Page -------
+    function renderHomePage() {
+  AppState.currentView = 'home';
+  
+  DOM.mainContent.innerHTML = `
+    <div class="home-container">
+      <div class="welcome-section">
+        <h1>Welcome to PharmaScope Pro</h1>
+        <p class="subtitle">Your comprehensive clinical drug reference</p>
+      </div>
+      
+      <div class="search-prompt">
+        <div class="search-icon">🔍</div>
+        <h2>Search for Drugs</h2>
+        <p>Use the Quick Search button above to find detailed information about any medication</p>
+      </div>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">💊</div>
+          <h3>Drug Information</h3>
+          <p>Access comprehensive drug details from FDA and DailyMed</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">⚠️</div>
+          <h3>Adverse Events</h3>
+          <p>Review reported adverse reactions and safety data</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">🔬</div>
+          <h3>Clinical Data</h3>
+          <p>Explore RxCUI codes and drug classifications</p>
+        </div>
+        
+        <div class="feature-card">
+          <div class="feature-icon">✨</div>
+          <h3>AI Assistant</h3>
+          <p>Get instant answers with our Gemini-powered chatbot</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+    
