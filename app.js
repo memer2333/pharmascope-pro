@@ -23,6 +23,7 @@ const DOM = {
 
 // ── Initialisation ────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  updateApiStatus('online');
   renderHomePage();
 
   const inp = DOM.searchInput;
@@ -96,7 +97,108 @@ async function selectDrug(dbResult) {
     safeApiCall(() => getAdverseEvents(drugName), null, 6000),
         safeApiCall(() => getRxCUI(drugName), null, 6000),
         safeApiCall(() => getFullDrugLabel(drugName), null, 6000),
-450
+  ]);
+
+  AppState.currentDrug          = dbResult;
+  AppState.currentFDALabel      = dbResult;
+  AppState.currentLocalData     = getDrugLocalData(drugName);
+  AppState.currentDailyMedLabel = dailyMedLabel;
+  AppState.currentRxCUI         = rxcui;
+
+  const profileHTML = renderDrugProfile(
+    dbResult,
+    AppState.currentLocalData,
+    dailyMedLabel,
+    adverseEvents,
+    null
+  );
+  DOM.mainContent.innerHTML = profileHTML;
+  initProfileTabs();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function showProfileLoading(name) {
+  DOM.mainContent.innerHTML = `
+    <div class="loading-state">
+      <div class="loader-ring"></div>
+      <div class="loader-text">Loading <strong>${escapeHtml(name)}</strong>...</div>
+    </div>`;
+}
+
+// -- Suggestions --
+async function loadSuggestions(query) {
+  if (!query || query.length < 2) { hideSuggestions(); return; }
+  const results = await getSuggestions(query).catch(() => []);
+  if (!results || results.length === 0) { hideSuggestions(); return; }
+  let box = document.getElementById('search-suggestions');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'search-suggestions';
+    box.className = 'suggestions-dropdown';
+    const inp = DOM.searchInput;
+    if (inp && inp.parentNode) inp.parentNode.appendChild(box);
+  }
+  box.innerHTML = results.map(r => `
+    <div class="suggestion-item" onclick="performSearch('${escapeAttr(r.name)}')">
+      <span class="suggestion-name">${escapeHtml(r.name)}</span>
+      <span class="suggestion-type">${escapeHtml(r.type || 'Drug')}</span>
+    </div>`).join('');
+  box.style.display = 'block';
+}
+
+function hideSuggestions() {
+  const box = document.getElementById('search-suggestions');
+  if (box) box.style.display = 'none';
+}
+
+// -- Tabs --
+function initProfileTabs() {
+  document.querySelectorAll('.tab-btn').forEach(tab => {
+    tab.addEventListener('click', () => switchTab(tab.getAttribute('data-tab')));
+  });
+}
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+  const panel = document.getElementById(`tab-${tabName}`);
+  if (btn) btn.classList.add('active');
+  if (panel) panel.classList.add('active');
+}
+
+// -- API Status --
+function updateApiStatus(status) {
+  const dot   = document.getElementById('api-status-dot');
+  const label = document.getElementById('api-status-label');
+  if (!dot || !label) return;
+  if (status === 'online') {
+    dot.style.background = '#00d4aa';
+    dot.style.boxShadow  = '0 0 8px #00d4aa';
+    label.textContent    = 'Online';
+  } else if (status === 'offline') {
+    dot.style.background = '#e74c3c';
+    dot.style.boxShadow  = '0 0 8px #e74c3c';
+    label.textContent    = 'Offline';
+  } else {
+    dot.style.background = '#f39c12';
+    dot.style.boxShadow  = '0 0 8px #f39c12';
+    label.textContent    = 'Connecting...';
+  }
+}
+
+// -- Toast --
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
 
     // --- Home Page -------
     function renderHomePage() {
