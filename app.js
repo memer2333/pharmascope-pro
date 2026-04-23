@@ -86,36 +86,33 @@ function renderResultsPage(results, query) {
 // ── Drug Profile ──────────────────────────────────────────────
 async function selectDrug(dbResult) {
   if (!dbResult) return;
-  const drugName = dbResult.name || 'Unknown';
+  const drugName  = dbResult.name || 'Unknown';
   const brandName = (dbResult.brandNames && dbResult.brandNames.length > 0)
     ? dbResult.brandNames[0] : drugName;
 
-  showProfileLoading(brandName);
+  // Step 1: Render immediately with DrugBank data (no wait)
+  const localData = getDrugLocalData(drugName);
+  AppState.currentDrug       = dbResult;
+  AppState.currentFDALabel   = dbResult;
+  AppState.currentLocalData  = localData;
+  AppState.currentDailyMedLabel = null;
+  AppState.currentRxCUI      = null;
 
-  // Fetch DrugBank local data, adverse events, RxCUI, and DailyMed label in parallel
-  const [adverseEvents, rxcui, dailyMedLabel] = await Promise.all([
-    safeApiCall(() => getAdverseEvents(drugName), null, 6000),
-        safeApiCall(() => getRxCUI(drugName), null, 6000),
-        safeApiCall(() => getFullDrugLabel(drugName), null, 6000),
-  ]);
-
-  AppState.currentDrug          = dbResult;
-  AppState.currentFDALabel      = dbResult;
-  AppState.currentLocalData     = getDrugLocalData(drugName);
-  AppState.currentDailyMedLabel = dailyMedLabel;
-  AppState.currentRxCUI         = rxcui;
-
-  const profileHTML = renderDrugProfile(
-    dbResult,
-    AppState.currentLocalData,
-    dailyMedLabel,
-    adverseEvents,
-    null
-  );
+  const profileHTML = renderDrugProfile(dbResult, localData, null, null, null);
   DOM.mainContent.innerHTML = profileHTML;
   initProfileTabs();
   window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+
+  // Step 2: Fetch DailyMed + RxNav in background, then refresh sections
+  safeApiCall(() => getFullDrugLabel(drugName), null, 6000).then(dailyMedLabel => {
+    if (!dailyMedLabel) return;
+    AppState.currentDailyMedLabel = dailyMedLabel;
+    // Re-render with enriched DailyMed data
+    const enriched = renderDrugProfile(dbResult, localData, dailyMedLabel, null, null);
+    DOM.mainContent.innerHTML = enriched;
+    initProfileTabs();
+  }).catch(() => {});
+}}
 
 function showProfileLoading(name) {
   DOM.mainContent.innerHTML = `
