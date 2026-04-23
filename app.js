@@ -211,11 +211,21 @@ function showToast(message, type = 'info') {
         <p class="subtitle">Your comprehensive clinical drug reference</p>
       </div>
       
-      <div class="search-prompt">
-        <div class="search-icon">🔍</div>
-        <h2>Search for Drugs</h2>
-        <p>Use the Quick Search button above to find detailed information about any medication</p>
-      </div>
+<div class="home-search-section">
+          <div class="search-box-wrapper">
+            <input
+              id="main-search-input"
+              class="home-search-input"
+              type="text"
+              placeholder="Search by drug name, generic name, or drug class..."
+              autocomplete="off"
+              onkeydown="if(event.key==='Enter') performSearch(this.value)"
+            />
+            <button class="home-search-btn" onclick="performSearch(document.getElementById('main-search-input').value)">
+              &#128269; Search
+            </button>
+          </div>
+        </div>
       
       <div class="features-grid">
         <div class="feature-card">
@@ -244,5 +254,13 @@ function showToast(message, type = 'info') {
       </div>
     </div>
   `;
+      
+  // Wire up home search input after rendering
+  const homeInput = document.getElementById('main-search-input');
+  if (homeInput) {
+    homeInput.addEventListener('input', e => loadSuggestions(e.target.value));
+    homeInput.addEventListener('blur',  () => setTimeout(hideSuggestions, 150));
+    homeInput.addEventListener('focus', e => { if (e.target.value.length >= 2) loadSuggestions(e.target.value); });
+  }
 }
     
