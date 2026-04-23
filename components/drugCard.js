@@ -94,7 +94,7 @@ function createDrugCard(info, index, onSelect) {
 
       <div class="drug-card-footer">
         <span class="manufacturer-name">🏭 ${escapeHtml(info.manufacturer)}</span>
-        <button class="view-profile-btn">View Profile →</button>
+                  <button class="view-profile-btn" onclick="selectDrug(window._drugRegistry[${index}])">View Profile &#8594;</button>
       </div>
     </div>`;
 }
