@@ -16,15 +16,12 @@ async function searchDailyMed(drugName) {
   const variants = [
     base,
     base.toLowerCase(),
-    base.toUpperCase(),
-    base.charAt(0).toUpperCase() + base.slice(1).toLowerCase(),
-    base.split(' ')[0],
   ];
   for (const name of [...new Set(variants)]) {
     const encoded = encodeURIComponent(name);
     const url = `${DAILYMED_BASE}/spls.json?drug_name=${encoded}&pagesize=10`;
     try {
-      const res = await fetchWithTimeout(url, 10000);
+      const res = await fetchWithTimeout(url, 3000);
       if (!res.ok) continue;
       const data = await res.json();
       if (data.data && data.data.length > 0) return data.data;
