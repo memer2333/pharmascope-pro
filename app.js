@@ -182,3 +182,8 @@ function renderHomePage() {
   }
   if (homeBtn) homeBtn.addEventListener('click', function() { var i = document.getElementById('main-search-input'); if (i) performSearch(i.value); });
 }
+
+window.renderHomePage = renderHomePage;
+window.performSearch = performSearch;
+window.selectDrug = selectDrug;
+window.switchTab = switchTab;
