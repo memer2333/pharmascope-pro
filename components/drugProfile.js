@@ -18,12 +18,10 @@ function renderDrugProfile(drug, localData, dailyMedLabel, adverseEvents, intera
   var clearance = drug.clearance || '';
   var categories = (drug.categories && drug.categories.length > 0) ? drug.categories.map(function(c) { return c.category || c; }).slice(0, 5).join(', ') : '';
 
-  // Use localData overrides when available
   var therapeuticClass = (localData && localData.therapeuticClass) ? localData.therapeuticClass : groups;
   var localIndication = (localData && localData.indications) ? localData.indications : indication;
-  var localWarnings = (localData && localData.warnings) ? localData.warnings : (drug.toxicity || '');
+  var localWarnings = (localData && localData.warnings) ? localData.warnings : toxicity;
 
-  // Use DailyMed enrichment when available
   var dosage = (dailyMedLabel && dailyMedLabel.dosage) ? dailyMedLabel.dosage : ((localData && localData.generalDosing) ? localData.generalDosing : '');
   var warnings = (dailyMedLabel && dailyMedLabel.warnings) ? dailyMedLabel.warnings : localWarnings;
   var boxedWarning = (dailyMedLabel && dailyMedLabel.boxedWarning) ? dailyMedLabel.boxedWarning : ((localData && localData.blackBoxWarning) ? localData.blackBoxWarning : '');
@@ -52,14 +50,14 @@ function renderDrugProfile(drug, localData, dailyMedLabel, adverseEvents, intera
     (therapeuticClass ? '<span class="profile-class-badge">' + escapeHtml(therapeuticClass) + '</span>' : '') +
     (groups ? '<span class="profile-groups">' + escapeHtml(groups) + '</span>' : '') +
     '</div>' +
-    '<button class="back-btn" onclick="history.go(-1)||renderHomePage()">&#8592; Back</button>' +
+    '<button class="back-btn" onclick="renderHomePage()">&#8592; Back</button>' +
     '</div>';
 
   var tabNav = '<div class="profile-tabs-wrapper"><nav class="profile-tabs" role="tablist">' +
-    '<button class="tab-btn active" data-tab="general" onclick="switchTab(&#39;general&#39;)" role="tab">General</button>' +
-    '<button class="tab-btn" data-tab="dosing" onclick="switchTab(&#39;dosing&#39;)" role="tab">Dosing</button>' +
-    '<button class="tab-btn" data-tab="safety" onclick="switchTab(&#39;safety&#39;)" role="tab">Safety</button>' +
-    '<button class="tab-btn" data-tab="pharmacology" onclick="switchTab(&#39;pharmacology&#39;)" role="tab">ADME</button>' +
+    '<button class="tab-btn active" data-tab="general" role="tab">General</button>' +
+    '<button class="tab-btn" data-tab="dosing" role="tab">Dosing</button>' +
+    '<button class="tab-btn" data-tab="safety" role="tab">Safety</button>' +
+    '<button class="tab-btn" data-tab="pharmacology" role="tab">ADME</button>' +
     '</nav></div>';
 
   var generalTab = '<div id="tab-general" class="tab-panel active">' +
@@ -109,7 +107,7 @@ function renderDrugProfile(drug, localData, dailyMedLabel, adverseEvents, intera
 function getClassColor(cls) {
   if (!cls) return '#00d4aa';
   var c = cls.toLowerCase();
-  if (c.includes('antibiotic') || c.includes('antimicrobial')) return '#00d4aa';
+  if (c.includes('antibiotic')) return '#00d4aa';
   if (c.includes('anticoagulant')) return '#e74c3c';
   if (c.includes('antihypertensive') || c.includes('ace') || c.includes('beta')) return '#3498db';
   if (c.includes('antidiabetic') || c.includes('biguanide')) return '#2ecc71';
